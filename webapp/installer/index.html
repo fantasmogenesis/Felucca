@@ -146,7 +146,7 @@
   <p><a href="../editor/" data-t="editor"></a></p>
   <p id="try-p"><a href="../try/" data-t="tryIt"></a></p>
   <p id="next-p" hidden><a href="../try/" data-t="tryNext"></a></p>
-  <footer><p class="small">Felucca by Leo Kuroshita (@kurogedelic), <a href="https://hugelton.com" target="_blank" rel="noopener">Hügelton Instruments</a>, with its CrispyZebra waveforms, drum voices, Sample Pack and Fukiai icons (MIT).<br>
+  <footer><p class="small">Felucca by Leo Kuroshita (@kurogedelic), <a href="https://hugelton.com" target="_blank" rel="noopener">Hügelton Instruments</a>, with its drum voices, Sample Pack (CC0) and Fukiai icons (MIT). Engines: <a href="https://github.com/hugelton/Felucca-Engines" target="_blank" rel="noopener">Felucca-Engines</a> (MIT); hardware layer: <a href="https://github.com/hugelton/felucca-bsp" target="_blank" rel="noopener">felucca-bsp</a> (MPL-2.0).<br>
     Font: Inter Tight (The Inter Project Authors, SIL OFL 1.1). Samples: Versilian Studios VSCO-2 Community Edition and VCSL (CC0 1.0).<br>
     FM6 engine: msfa from Dexed (Google Inc., Pascal Gauthier, Apache-2.0). The package also holds three JieLi AC79 SDK files, uboot.boot, cfg_tool.bin and eq_cfg_hw.bin (JieLi Technology, Apache-2.0). <a href="../../firmware/LICENSING.md">Licences</a>: <a href="../../firmware/LICENSE">GPL-3.0</a>, <a href="../../firmware/LICENSES/Apache-2.0.txt">Apache-2.0</a>, <a href="../../firmware/LICENSES/">all</a>.<br>
     M-VAVE and FM-1 are trademarks of their respective owners.<br>
@@ -974,7 +974,7 @@ const sayK = (k, arg = "") => { lastKey = k; lastArg = arg; $("status").textCont
 const say = (txt) => { lastKey = null; $("status").textContent = txt; };
 const log = (t) => { $("log").textContent += t + "\n"; };
 let image = null, pkgBytes = null, flashSize = 0;
-const meta = {"version": "1.6.1", "product": "FM-1_916", "pkg": "../../firmware/felucca-1.6.1.fwsc", "size": 610090, "sha256": "dff3a38f7e5b9833e15aba322558c9485e9e422e3ff813c616c91b3584a2d909"};
+const meta = {"version": "1.7.0", "product": "FM-1_917", "pkg": "../../firmware/felucca-1.7.0.fwsc", "size": 610286, "sha256": "bff7c617cfb2c88e66b22aa691cb798dfa0d9cb12ff9a73deab51d404e82817c"};
 /* the served package as make_site pinned it (size, SHA-256): checked when it loads and again before the write */
 const pinned = async (b) => (meta.size == null || b.length === meta.size) && (!meta.sha256 || await sha256hex(b) === meta.sha256);
 /* the update loader's requests for flash.bin: one read per 512 bytes, from 1.1 two (it checks the package before it
