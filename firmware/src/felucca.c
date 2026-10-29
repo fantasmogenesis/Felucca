@@ -37,10 +37,24 @@
                                   * mix_block). 0 (FELUCCA_CPU2=0 build.py): none of it (no core 1 stack, waiting loop,
                                   * buffers or menu row). (The same default: core.h) */
 #endif
+#ifndef FELUCCA_FG
+#define FELUCCA_FG 0             /* 1 (fm1-groovebox firmware/build.sh): the groovebox fg_box instead of Felucca's music and
+                                  * UI (fgbox.c); Felucca keeps the boot, USB, the update, the flash, the LCD, the scan */
+#endif
+#ifndef FELUCCA_FGBENCH
+#define FELUCCA_FGBENCH 0        /* 1 (fm1-groovebox bench/build.sh): the fg_* engines play a fixed pattern instead of
+                                  * mix_block, timed per stage (fgbench.c, console `fg`) */
+#endif
 #define FM1_CPU1_USED FELUCCA_CPU2   /* hal/fm1_sys.h: the second core is built in; every reset holds it first (its
                                       * waiting loop is in RAM the ROM and the SPL use at boot) */
 #ifndef FELUCCA_VERSION
+#if FELUCCA_FG
+#define FELUCCA_VERSION "FNTSMG-1 0.8.6"
+#elif FELUCCA_FGBENCH
+#define FELUCCA_VERSION "v1.6.1-fgbench2"
+#else
 #define FELUCCA_VERSION "v1.6.1" /* shown in the menu, the console and the editor; build.py --release X.Y */
+#endif
 #endif
 #if FELUCCA_OTA && !FELUCCA_FLASH
 #error "FELUCCA_OTA needs FELUCCA_FLASH"
@@ -67,6 +81,9 @@
 
 /* ----------------------------------------------------- base, display --- */
 #include "libc.c"
+#if FELUCCA_FG && !defined(LCD_BAUD)
+#define LCD_BAUD 2u              /* fg: the SPI at 20 MHz (Felucca's 12): the visual repaints most of the screen */
+#endif
 #include "lcd.c"
 #include "gfx.c"
 
@@ -86,6 +103,9 @@
 #endif
 #include "song_chain.c"
 #include "seq.c"
+#if FELUCCA_FGBENCH
+#include "fgbench.c"
+#endif
 #include "audio.c"
 
 /* -------------------------------------------------------------- UI --- */
@@ -111,6 +131,9 @@
 #include "ota.c"
 #include "ota_hw.c"
 #include "editor.c"              /* web editor SysEx (needs the OTA SysEx plumbing) */
+#endif
+#if FELUCCA_FG
+#include "fgbox.c"               /* (after the panel, the flash store and USB: it uses all three) */
 #endif
 #if FELUCCA_CDC
 #include "console.c"

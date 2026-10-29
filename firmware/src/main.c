@@ -45,7 +45,7 @@ void fm1_timer5_irq(void)
     if (felucca_dbg.in_audio) {
         felucca_dbg.nested++;
 #if FELUCCA_UAC
-        if (usb_due)
+        if (usb_due || FELUCCA_UAC_MT)                  /* (the 8-track packets are big: queued within 0.1 ms) */
             uac_service();
 #endif
         t5_nested_ticks += fm1_ticks() - t0;
@@ -53,6 +53,10 @@ void fm1_timer5_irq(void)
     }
     if (owed & 1u)
         usb_poll();
+#if FELUCCA_UAC_MT
+    else
+        uac_service();
+#endif
 #if FELUCCA_UART
     if (owed & 2u)
         uart_midi_poll();
@@ -165,7 +169,11 @@ static void fm1_main(void)
     settings_init();
     usb_serial_apply();                                 /* (#67: the saved USB SERIAL before usb_start) */
     lcd_init();
+#if FELUCCA_FG
+    lcd_fill(0, 0, 240, 240, T_BG);                     /* (FNTSMG-1 draws its own start: fg_box_draw.c) */
+#else
     draw_splash();                                      /* ui_draw.c (1.1.5) */
+#endif
     if (felucca_dbg.magic != DBG_MAGIC) {
         memset(&felucca_dbg, 0, sizeof felucca_dbg);
         felucca_dbg.magic = DBG_MAGIC;
@@ -182,11 +190,15 @@ static void fm1_main(void)
     fm1_input_init();
     fm1_adc_init();
     panel_init();
+#if FELUCCA_FG
+    fgx_init();
+#else
     felucca_init();
+#endif
     master_boot();
     kb_boot_hold = 1;                         /* #137: no notes from the keys before the UI (seq.c keyboard_block) */
 #if FELUCCA_CPU2
-    if (!bootguard.failed && (ui_prefs2 & (PREF_CPU2_ON >> 16))) {
+    if (!bootguard.failed && (FELUCCA_FGBENCH || FELUCCA_FG || (ui_prefs2 & (PREF_CPU2_ON >> 16)))) {   /* (fg: always) */
         /* the second core (hal/fm1_cpu1.h; fx.c mix_block hands it parts), at power-on, before the audio and
          * the timers (started later it never reaches its entry). It starts in the chip's ROM: the PC limits open
          * meanwhile. MENU > 2ND CORE OFF (the default), a crash in the last boot's first 30 s, or no answer: it is
@@ -195,6 +207,9 @@ static void fm1_main(void)
         fm1_cpu1_start();
         fm1_guard_enable(FM1_GUARD_PC);
     }
+#endif
+#if FELUCCA_FGBENCH
+    fg_bench_init();
 #endif
     audio_init();
     usb_start();
@@ -206,11 +221,15 @@ static void fm1_main(void)
     fm1_guard_lock_top();
     fm1_irq_enable_all();
     fm1_delay_ms(30);
+#if FELUCCA_FG
+    fgx_boot();                               /* the last session's project (autosave) */
+#else
     if ((fm1_in.buttons & 3u) == 3u) {
         panel_setup();                        /* OCT- + OCT+ held at power-on */
         settings_save();
     }
     autosave_boot(boot_clean);                /* (1.2) the last session's music, under the splash */
+#endif
     for (ms = 0; ms < 400u; ms += 10u) {      /* the splash; the pot followed (MIDI IN plays under it) */
         fm1_delay_ms(10);
         master_poll();
@@ -274,7 +293,9 @@ static void fm1_main(void)
             }
         }
 #if FELUCCA_OTA
+#if !FELUCCA_FG
         ed_service();                                   /* web editor SysEx */
+#endif
         ota_service();                                  /* M-UPGRADE handshake */
         if (usb.ota_req) {                              /* M-UPGRADE upgrade command */
             usb.ota_req = 0;
@@ -304,6 +325,11 @@ static void fm1_main(void)
         felucca_dbg.page = ui.page;
         felucca_dbg.home = ui.home;
         felucca_dbg.stage = 1;
+#if FELUCCA_FG
+        fgx_loop();
+        felucca_dbg.stage = 9;
+        (void)m;
+#else
         ui_input();
         settings_poll();                              /* queued settings save: only while stopped */
         autosave_poll();                              /* (1.2) the music, stopped and idle: project.c */
@@ -317,6 +343,7 @@ static void fm1_main(void)
             ed_service();                       /* editor replies without waiting for the next frame */
 #endif
         }
+#endif
     }
 }
 

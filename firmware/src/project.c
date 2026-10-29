@@ -1156,7 +1156,21 @@ static uint32_t persist_retry_ms;
 
 static void persist_boot(void)                    /* before settings_init / panel_init */
 {
-#if FELUCCA_FLASH
+#if FELUCCA_FLASH && FELUCCA_FG
+    persist_t p;                                   /* fg: the flash and the settings (panel calibration, 2ND CORE),
+                                                    * none of Felucca's projects, samples or presets */
+    uint32_t f = irq_save();
+    flash_ok = FL_FAR(fl_jedec_ram)() == 0x856014u;
+    irq_restore(f);
+    if (!flash_ok)
+        return;
+    fl_plain_window_init();
+    {
+        int n = st_load(OBJ_SETTINGS, &p, sizeof p);
+        if (settings_import(&p, n))
+            persist_saved = p;
+    }
+#elif FELUCCA_FLASH
     persist_t p;
     uint32_t f = irq_save();
     flash_ok = FL_FAR(fl_jedec_ram)() == 0x856014u;       /* the expected 1 MiB part, else stay RAM-only */

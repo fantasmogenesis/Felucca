@@ -55,6 +55,11 @@ VERSION = None                      # FELUCCA_VERSION for release builds (defaul
 # stacks (firmware/hal/fm1_cpu1.S) linked and its waiting loop (.c1_text) checked; MENU > SYSTEM > 2ND CORE starts it
 # (OFF by default: one core, as 1.6). FELUCCA_CPU2=0: none of it is built (1.6's one-core code and RAM)
 CPU2 = os.environ.get("FELUCCA_CPU2") != "0"
+# FELUCCA_FGBENCH=1 (fm1-groovebox, bench/build.sh): the audio callback runs the fg_* engines from build/fg/ instead
+# of mix_block, timed per stage (console `fg`). build/fg/cflags.txt: the -D the fg objects and their bench share
+FGBENCH = os.environ.get("FELUCCA_FGBENCH") == "1"
+# FELUCCA_FG=1 (fm1-groovebox firmware/build.sh): the groovebox (fg_box) on Felucca's platform, the same build/fg/ objects
+FG = os.environ.get("FELUCCA_FG") == "1"
 
 
 def toolchain():
@@ -194,7 +199,7 @@ def build_app():
     flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ibuild/gen"]
     for flag in ("FELUCCA_FLASH", "FELUCCA_OTA", "FELUCCA_OTA_DRYRUN", "FELUCCA_OTA_RAMONLY", "FELUCCA_CDC",
                  "FELUCCA_UART", "FELUCCA_UAC", "FELUCCA_UAC_TONE", "FELUCCA_UAC_48K", "FELUCCA_ICONS", "FELUCCA_SLICE", "FELUCCA_FM4",
-                 "FELUCCA_CDC_DEFAULT", "FELUCCA_UAC_AS_FIRST", "FELUCCA_CPU2"):
+                 "FELUCCA_CDC_DEFAULT", "FELUCCA_UAC_AS_FIRST", "FELUCCA_CPU2", "FELUCCA_FGBENCH", "FELUCCA_FG", "FELUCCA_UAC_MT"):
         v = os.environ.get(flag)    # unset: the default in firmware/src/felucca.c
         if v in ("0", "1"):
             flags.append(f"-D{flag}={v}")
@@ -202,6 +207,13 @@ def build_app():
     if v in ("0", "1", "2", "3"):
         flags.append(f"-DFELUCCA_USB_LAYOUT={v}")
     flags.append(f'-DFELUCCA_ID="{PRODUCT}"')
+    fg_objs = []
+    if FGBENCH or FG:
+        fg_defs = (OUT / "fg" / "cflags.txt").read_text().split()
+        flags += ["-Ibuild/fg", *fg_defs]           # the same -D on both sides: they share fg_box_t's layout
+        fg_flags = [*CFLAGS, *fg_defs, "-Ibuild/fg"]
+        fg_objs = [OUT / "fg" / (c.stem + ".o") for c in sorted((OUT / "fg").glob("*.c"))]
+        tc_all(*[("cc", *fg_flags, "-c", o.with_suffix(".c"), "-o", o) for o in fg_objs])
     if VERSION:
         flags.append(f'-DFELUCCA_VERSION="{VERSION}"')
     # felucca.c goes to LLVM IR without the optimizer, the main-loop functions (UI, stores, editor) are
@@ -223,7 +235,7 @@ def build_app():
            OUT / "felucca_size.ll", "-o", OUT / "felucca.o")
     elf = OUT / "felucca.elf"
     tc("pi32v2/bin/ld", "-T", FW / "app.ld", OUT / "crt0.o", OUT / "fm1_vec.o", OUT / "fm1_isr.o",
-       *([OUT / "fm1_cpu1.o"] if CPU2 else []), OUT / "felucca.o", "-o", elf)
+       *([OUT / "fm1_cpu1.o"] if CPU2 else []), OUT / "felucca.o", *fg_objs, "-o", elf)
     for sect in ("text.bin", "data.bin", "ramtext.bin", "c1text.bin"):
         (OUT / sect).unlink(missing_ok=True)
     *_, syms, dis, rt = tc_all(("common/bin/objcopy", "-O", "binary", "-j", ".text", elf, OUT / "text.bin"),

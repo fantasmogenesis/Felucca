@@ -191,7 +191,9 @@ static void con_uac(void)                              /* USB audio input: strea
 
 static void con_status(void)
 {
+#if !FELUCCA_FG
     const engine_t *e = ENGINES[TSEL->eng_req % NENGINES];
+#endif
     con_puts("felucca ");
     con_puts(FELUCCA_VERSION);
     con_puts("\r\n");
@@ -212,12 +214,14 @@ static void con_status(void)
     con_kv("voices_given_up", (int32_t)voice_kills);
     con_kv("track", (int32_t)song.sel + 1);
     con_kv("batt_raw", song.batt_raw);
+#if !FELUCCA_FG                                        /* (fg: Felucca's engines are not in the build) */
     con_puts("engine ");
     con_puts(e->name);
     con_puts("\r\n");
     con_puts("preset ");
     con_puts(TSEL->preset < e->npresets ? e->presets[TSEL->preset].name : "-");
     con_puts("\r\n");
+#endif
     con_kv("bpm", song.g[G_BPM]);
     con_kv("playing", song.playing);
     con_kv("boots", (int32_t)felucca_dbg.boots);
@@ -341,6 +345,9 @@ static void con_crash(void)
 
 static void con_params(void)
 {
+#if FELUCCA_FG
+    con_puts("fg: use `fg`\r\n");
+#else
     uint32_t i;
     for (i = 0; i < P_COUNT; i++) {
         con_dec((int32_t)i);
@@ -348,12 +355,176 @@ static void con_params(void)
         con_dec(TSEL->p[i]);
         con_puts(i % 8u == 7u || i + 1u == P_COUNT ? "\r\n" : " ");
     }
+#endif
 }
+
+#if FELUCCA_FGBENCH
+/* the bench (fgbench.c): per scene and stage, the mean and the worst block in us and in % of a block (128 frames,
+ * 2901 us); then the RAM of each piece. `fg reset` clears the counts */
+static void con_fg(const char *p)
+{
+    uint32_t sc, i;
+    const fgb_mem_t *m;
+    if (con_word(&p, "reset")) {
+        fg_bench_reset();
+        con_puts("fg: reset\r\n");
+        return;
+    }
+    con_puts("estado ");
+    con_puts(FGB_STATE[fgb_state]);
+    con_puts("\r\n");
+    con_kv("cpu_pct", (int32_t)(song.cpu_q8 * 100u / 256u));
+    con_kv("audio_max_us", (int32_t)felucca_dbg.max_us);
+    con_kv("audio_late", (int32_t)felucca_dbg.late);
+    con_kv("block_us", (int32_t)FGB_BUDGET_US);
+    con_kv("nucleo1", fm1_c1_on);                       /* 1: the second core takes the synths */
+    con_kv("nucleo1_fallo", fm1_c1_gave_up);            /* 1: it misread a job, 2: one timed out (then one core) */
+    con_kv("nucleo1_pila", (int32_t)fm1_cpu1_stack_used());
+    for (sc = 0; sc < FGB_SCENES; sc++) {
+        const fgb_stats_t *s = fg_bench_stats(sc);
+        con_puts("-- ");
+        con_puts(fg_bench_scene_name(sc));
+        for (i = 0; i < 4u; i++) {
+            con_putc(' ');
+            con_puts(fg_bench_model_name(sc, i));
+        }
+        con_puts(sc == fg_bench_scene() ? " (sonando)\r\n" : "\r\n");
+        con_kv("blocks", (int32_t)s->blocks);
+        con_kv("blocks_nucleo1", (int32_t)s->on_core1);
+        con_puts("stage mean_us max_us mean_pct max_pct\r\n");
+        for (i = 0; i < FGB_NST; i++) {
+            uint32_t mean = s->blocks ? (uint32_t)(s->sum[i] / s->blocks) : 0u, mx = s->max[i];
+            con_puts(fg_bench_stage(i));
+            con_putc(' ');
+            con_dec((int32_t)(mean / FM1_TICKS_PER_US));
+            con_putc(' ');
+            con_dec((int32_t)(mx / FM1_TICKS_PER_US));
+            con_putc(' ');
+            con_dec((int32_t)(mean * 100u / FGB_BUDGET_TICKS));
+            con_putc(' ');
+            con_dec((int32_t)(mx * 100u / FGB_BUDGET_TICKS));
+            con_puts("\r\n");
+        }
+    }
+    con_puts("-- ram (bytes)\r\n");
+    for (m = fg_bench_mem(); m->name; m++)
+        con_kv(m->name, (int32_t)m->bytes);
+}
+#endif
+
+#if FELUCCA_FG
+/* the groovebox (fgbox.c): the audio's load (TIMER4 ticks -> us and % of a half, 2901 us), the screen's frame time,
+ * the RAM it takes. `fg reset` clears the maxima */
+static void con_fgx(const char *p)
+{
+    const fg_box_t *b = &fgx_box;
+    uint32_t half = HALF_FRAMES * 544u;
+    if (con_word(&p, "reset")) {
+        fgx_box.t_max = fgx_box.t_core0_max = fgx_box.t_core1_max = 0;
+        fgx_box.t_n = 0;
+        fgx_frame_us_max = 0;
+        con_puts("fg: reset\r\n");
+        return;
+    }
+    con_kv("seguro", fgx_safe);
+    con_kv("cpu_pct", (int32_t)(song.cpu_q8 * 100u / 256u));
+    con_kv("audio_max_us", (int32_t)felucca_dbg.max_us);
+    con_kv("audio_late", (int32_t)felucca_dbg.late);
+    con_kv("nucleo1", fm1_c1_on);
+    con_kv("nucleo1_fallo", fm1_c1_gave_up);
+    con_kv("nucleo1_pila", (int32_t)fm1_cpu1_stack_used());
+    con_kv("bloque_prom_pct", (int32_t)(b->t_avg * 100u / half));
+    con_kv("bloque_max_pct", (int32_t)(b->t_max * 100u / half));
+    con_kv("nucleo0_max_pct", (int32_t)(b->t_core0_max * 100u / half));
+    con_kv("nucleo1_max_pct", (int32_t)(b->t_core1_max * 100u / half));
+    con_kv("cuadro_us", (int32_t)fgx_frame_us);
+    con_kv("cuadro_max_us", (int32_t)fgx_frame_us_max);
+    con_kv("cuadros", (int32_t)fgx_frames);
+    con_kv("cuadro_visual_us", (int32_t)fgx_vis_us);   /* fg_box_frame: el visual y los textos */
+    con_kv("cuadro_bandas_us", (int32_t)fgx_band_us);  /* las 15 bandas a RGB565 (sin esperar al SPI) */
+    con_kv("bandas_mandadas", (int32_t)fgx_sent);
+    con_kv("tocando", b->playing);
+    con_kv("voces", (int32_t)(fg_synth_voices(&b->SY[0]) * 1000u + fg_synth_voices(&b->SY[1]) * 100u + fg_synth_voices(&b->SY[2]) * 10u + fg_synth_voices(&b->SY[3])));
+    con_kv("voces_max", b->maxv);
+    con_kv("reloj_bpm", b->a_bpm);                      /* el reloj de fuera: tempo, último desfase corregido */
+    con_kv("reloj_desfase_us", (int32_t)((int64_t)b->ck_err * 1000000 / 44100));
+    con_kv("reloj_ajustes", (int32_t)b->ck_fix);
+    con_kv("reloj_saltos", (int32_t)b->ck_snap);
+    con_kv("patron", b->s.cur + 1);
+    con_kv("pista", b->sel + 1);
+    con_kv("pagina", b->page);
+    con_kv("ranuras", b->slots);
+    con_kv("sostenidos", b->down);
+    con_puts("aviso ");
+    con_puts(b->ov.label);
+    con_puts(" = ");
+    con_puts(b->ov.value);
+    con_puts("\r\n");
+    con_kv("ram_caja", (int32_t)sizeof fgx_box);
+    con_kv("ram_visual", (int32_t)sizeof fgx_vis);
+}
+/* fgb LABEL 0|1, fgk KEY 0|1, fge ROLE STEPS: the controls, as if touched (tests from the computer) */
+static void con_fgin(const char *p, char kind)
+{
+    int ok1, ok2, neg;
+    uint32_t a = con_num(&p, &ok1), v;
+    while (*p == ' ')
+        p++;
+    neg = *p == '-';
+    if (neg)
+        p++;
+    v = con_num(&p, &ok2);
+    if (neg)
+        v = 0u - v;
+    if (!ok1 || !ok2) {
+        con_puts("? numbers\r\n");
+        return;
+    }
+    fgx_box.now = fm1_ms;
+    if (kind == 'b')
+        fg_box_button(&fgx_box, a, (int)v);
+    else if (kind == 'k')
+        fg_box_key(&fgx_box, a, (int)v);
+    else
+        fg_box_enc(&fgx_box, a, (int32_t)v);
+    con_puts("ok\r\n");
+}
+/* fgshot BAND (0..14): that band of the screen as it is now, 240x16 RGB565 (panel byte order) in hex, 64 pixels a line */
+static void con_fgshot(const char *p)
+{
+    uint16_t *px;
+    int ok;
+    uint32_t band = con_num(&p, &ok), i;
+    if (!ok || band > 14u) {
+        con_puts("? band 0..14\r\n");
+        return;
+    }
+    lcd_sync();                                         /* (the screen's band buffer: its DMA must be done) */
+    px = fgx_band[fgx_bk];
+    if (band == 0u)
+        fg_box_frame(&fgx_box);
+    fgx_box.band_sum[band] = 0;                         /* drawn even if unchanged (and sent again next frame) */
+    fg_box_band(&fgx_box, band * 16u, px);
+    for (i = 0; i < 240u * 16u; i++) {
+        con_hex(px[i], 4);
+        if (i % 64u == 63u)
+            con_puts("\r\n");
+    }
+    con_puts("\r\n.\r\n");
+}
+#endif
 
 static void con_exec(const char *p)
 {
     if (con_word(&p, "help") || con_word(&p, "?"))
-        con_puts("status  dbg  inp  crash  params  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
+        con_puts("status  dbg  inp  crash  params  memr ADDR [LEN]  flr OFF [LEN]  uboot yes"
+#if FELUCCA_FGBENCH
+                 "  fg [reset]"
+#endif
+#if FELUCCA_FG
+                 "  fg [reset]  fgb LABEL 0|1  fgk KEY 0|1  fge ROLE STEPS  fgshot BAND"
+#endif
+                 "\r\n");
     else if (con_word(&p, "status"))
         con_status();
     else if (con_word(&p, "dbg"))
@@ -366,6 +537,18 @@ static void con_exec(const char *p)
         con_params();
     else if (con_word(&p, "memr"))
         con_memr(p);
+#if FELUCCA_FGBENCH
+    else if (con_word(&p, "fg"))
+        con_fg(p);
+#endif
+#if FELUCCA_FG
+    else if (con_word(&p, "fgshot"))
+        con_fgshot(p);
+    else if (con_word(&p, "fgb") || con_word(&p, "fgk") || con_word(&p, "fge"))
+        con_fgin(p, p[-1]);
+    else if (con_word(&p, "fg"))
+        con_fgx(p);
+#endif
 #if FELUCCA_FLASH
     else if (con_word(&p, "flr"))
         con_flr(p);

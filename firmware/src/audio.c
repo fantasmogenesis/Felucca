@@ -24,10 +24,19 @@ static volatile uint32_t audio_halves, audio_max_us;
 static volatile uint32_t t5_nested_ticks;              /* TIMER4 ticks TIMER5 spent nested in this ISR (main.c) */
 static uint32_t audio_cpu_rem;                         /* keep the fractional IIR step: no low-load bias */
 
+#if FELUCCA_FG
+static void fgx_chunk(int32_t *out, uint32_t n);        /* fgbox.c (included later: it needs the panel and the flash) */
+#endif
 static void audio_block(int32_t *out, uint32_t n)       /* mix (fx.c), then Q15 -> 24 bit */
 {
     uint32_t i;
+#if FELUCCA_FG
+    fgx_chunk(out, n);                                  /* fgbox.c: the groovebox, a half at a time */
+#elif FELUCCA_FGBENCH
+    fgb_chunk(out, n);                                  /* fgbench.c: the fg_* engines, a half at a time */
+#else
     mix_block(out, n);
+#endif
 #if FELUCCA_UAC
     uac_tap(out, n);                                    /* the USB audio input: the same master output */
 #endif
@@ -106,10 +115,12 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
     if (p & FM1_AUDIO_HALF) {
         uint32_t half = fm1_audio_free_half(), b, us;
         int32_t *o = &abuf[half * HALF_WORDS];
+#if !FELUCCA_FG
         if (shed_req) {
             shed_req = 0;
             shed_voice();
         }
+#endif
 #if FELUCCA_UAC
         uac_render_start();
 #endif

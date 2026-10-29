@@ -2,7 +2,11 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Effects: per-track DIST and INSERT (1.5), then sends into three
  * shared buses (chorus, tempo delay, reverb). Mono buses, stereo dry mix. */
+#if FELUCCA_FGBENCH || FELUCCA_FG
+#define DLY_LEN 1024u            /* (mix_block does not run: the fg mixer has the pool) */
+#else
 #define DLY_LEN 65536u           /* 1.49 s: 1/4 fits from 41 BPM, 1/4D from 61, 1/2 from 81 */
+#endif
 #define CHO_LEN 2048u
 static int16_t dly_buf[DLY_LEN] __attribute__((section(".pool")));
 static int16_t cho_buf[CHO_LEN] __attribute__((section(".pool")));

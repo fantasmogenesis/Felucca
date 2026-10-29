@@ -67,7 +67,11 @@ typedef struct { uint16_t off; uint8_t w; const char *label; } kc_t;
 #define AL_CELLS 32u                               /* the next cells (cv_rrect), not ink: a row of keys, a fill */
 #define AL_N(n) ((uint32_t)(n) << 8)
 
+#if FELUCCA_FG
+#define CV_MAX (240u * 40u)       /* fg: only the update / UBOOT / crash lines draw text here */
+#else
 #define CV_MAX (240u * 124u)      /* the graph strip is 240 x 124 */
+#endif
 static uint16_t cv_px[CV_MAX] __attribute__((section(".pool")));
 static uint32_t cv_w, cv_h;
 static uint16_t cv_bg;           /* what cv_begin cleared the canvas to */
