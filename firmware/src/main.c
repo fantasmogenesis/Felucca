@@ -295,6 +295,8 @@ static void fm1_main(void)
 #if FELUCCA_OTA
 #if !FELUCCA_FG
         ed_service();                                   /* web editor SysEx */
+#else
+        fgx_sysex();                                    /* la app de FNTSMG-1 (F0 7D 46 47): antes, ota_service suelta todo */
 #endif
         ota_service();                                  /* M-UPGRADE handshake */
         if (usb.ota_req) {                              /* M-UPGRADE upgrade command */

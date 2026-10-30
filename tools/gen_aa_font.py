@@ -48,9 +48,18 @@ HUFF = [("M", "L")]
 # space as its range and the rest as extras
 # (ui_test.c checks that every L string is covered)
 L_CHARS = " #+-./0123456789ABCDEFGHIJKLMNOPQRSTUVWXY"
+# FELUCCA_FG (fm1-groovebox): S and M draw only the crash report (hex), UPDATE and UBOOT, the groovebox has its own
+# font: capitals, figures and a few signs, the rest left out (~20 KB of flash for the groovebox's own text)
+FG_CHARS = " #%()+-./0123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
 def preset(name):
+    if name == "inter-tight-fg":
+        v = str(FONTS.parent / "assets" / "fonts" / "InterTight[wght].ttf")
+        fg = [ord(c) for c in FG_CHARS[1:]]
+        return [("S", v + "@400", 12, (32, 32), fg, 0.0, PHASES),
+                ("M", v + "@500", 15, (32, 32), fg, 0.0, PHASES),
+                ("L", v + "@600", 28, (32, 32), [ord(c) for c in L_CHARS[1:]], 0.0, PHASES_L)]
     if name == "inter-tight":
         v = str(FONTS.parent / "assets" / "fonts" / "InterTight[wght].ttf")   # SIL OFL 1.1, Google Fonts
         return [("S", v + "@400", 12, (32, 126), EXTRAS, 0.0, PHASES),
@@ -231,7 +240,7 @@ def emit(face, tracking, gamma, kern_min):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("out")
-    ap.add_argument("--preset", choices=["standin", "inter-tight"])
+    ap.add_argument("--preset", choices=["standin", "inter-tight", "inter-tight-fg"])
     ap.add_argument("--face", action="append", default=[])
     ap.add_argument("--tracking", type=float, default=0.0, help="extra advance per glyph in em")
     ap.add_argument("--gamma", type=float, default=1.0, help="coverage curve; <1 thickens light-on-dark text")

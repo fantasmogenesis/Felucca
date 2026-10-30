@@ -105,7 +105,7 @@ def generate():
     for old in ("felucca_font.h", "felucca_icons.h"):     # headers of the bitmap font and icon atlas
         (GEN / old).unlink(missing_ok=True)
     tools = SRC / "tools"
-    cmds = [[tools / "gen_aa_font.py", GEN / "ui_fonts.h", "--preset", "inter-tight"],
+    cmds = [[tools / "gen_aa_font.py", GEN / "ui_fonts.h", "--preset", "inter-tight-fg" if FG else "inter-tight"],
             [tools / "gen_aa_icons.py", GEN / "ui_icons.h"],
             [tools / "gen_aa_keycaps.py", GEN / "ui_keycaps.h"],
             [tools / "gen_ui_palettes.py", GEN / "ui_palettes.h"],
@@ -213,7 +213,10 @@ def build_app():
         flags += ["-Ibuild/fg", *fg_defs]           # the same -D on both sides: they share fg_box_t's layout
         fg_flags = [*CFLAGS, *fg_defs, "-Ibuild/fg"]
         fg_objs = [OUT / "fg" / (c.stem + ".o") for c in sorted((OUT / "fg").glob("*.c"))]
-        tc_all(*[("cc", *fg_flags, "-c", o.with_suffix(".c"), "-o", o) for o in fg_objs])
+        # the groovebox's interface, the app protocol and the stores: built for size (-Oz); the sound and the drawing keep -Os
+        fg_small = {"fg_box", "fg_lang", "fg_usr"}
+        tc_all(*[("cc", *[("-Oz" if o.stem in fg_small and f == "-Os" else f) for f in fg_flags], "-c", o.with_suffix(".c"), "-o", o)
+                 for o in fg_objs])
     if VERSION:
         flags.append(f'-DFELUCCA_VERSION="{VERSION}"')
     # felucca.c goes to LLVM IR without the optimizer, the main-loop functions (UI, stores, editor) are

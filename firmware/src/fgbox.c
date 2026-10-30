@@ -12,6 +12,9 @@
  * silent and the screen says so, so the FM-1 stays up for a reinstall. */
 #include "fg_box.h"
 
+#ifndef FGX_VERSION
+#define FGX_VERSION "0.9"                              /* (lo que dice INFO a la app) */
+#endif
 #define FGX_VIS_HIST 1u                                /* cuadros de historia para repite/stutter/reversa del visual */
 static fg_box_t fgx_box __attribute__((section(".pool")));
 static uint8_t fgx_vis[28800u + 8640u + FGX_VIS_HIST * 7200u + 64u] __attribute__((section(".pool"), aligned(4)));
@@ -76,25 +79,42 @@ static void fgx_chunk(int32_t *out, uint32_t n)        /* audio ISR, via audio_b
 }
 
 /* ------------------------------------------------------------- flash --- */
+/* 0.9: 16 project slots of 8 KB, the autosave (16 KB), the sound bank (4 KB), the user samples
+ * (index + data, 140 KB) and the device settings (4 KB). 0.8 had 18 slots of 16 KB from the same base,
+ * headed "FGS1"; the 0.9 headers are "FGS0" (the same word with one bit cleared: slot 0 is
+ * migrated in place by programming that bit, without erasing). */
 #define FGX_BASE 0x97000u
-#define FGX_SLOT 0x4000u
-#define FGX_MAGIC 0x31534746u                          /* "FGS1" */
+#define FGX_MAGIC 0x30534746u                          /* "FGS0" */
+#define FGX_OLD_MAGIC 0x31534746u                      /* "FGS1" (0.8) */
+#define FGX_OLD_SLOT 0x4000u
+#define FGX_AUTO 0xB7000u
+#define FGX_BANK 0xBB000u
+#define FGX_USR 0xBC000u                               /* user samples: the index sector, then the data */
+#define FGX_USR_END 0xDF000u
+#define FGX_DEV 0xDF000u                               /* device settings (fg_box: FBX_DEV_SLOT) */
+#define FGX_USR_MAGIC 0x31555746u                      /* "FGU1": the index; its presence says the 0.9 map is in place */
 typedef struct { uint32_t magic, len, crc; } fgx_hdr_t;
-static uint32_t fgx_crc(const uint8_t *p, uint32_t n)
+static uint32_t fgx_crc_run(uint32_t c, const uint8_t *p, uint32_t n)
 {
-    uint32_t c = 0xFFFFFFFFu, k;
+    uint32_t k;
     while (n--) {
         c ^= *p++;
         for (k = 0; k < 8u; k++)
             c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1u)));
     }
-    return ~c;
+    return c;
 }
+static uint32_t fgx_crc(const uint8_t *p, uint32_t n) { return ~fgx_crc_run(0xFFFFFFFFu, p, n); }
+static uint32_t fgx_addr(unsigned slot)
+{
+    return slot < FBX_SLOTS ? FGX_BASE + slot * 0x2000u : slot == FBX_SLOTS ? FGX_AUTO : slot == FBX_UBANK_SLOT ? FGX_BANK : FGX_DEV;
+}
+static uint32_t fgx_cap(unsigned slot) { return slot < FBX_SLOTS ? 0x2000u : slot == FBX_SLOTS ? 0x4000u : 0x1000u; }
 static int fgx_write(unsigned slot, const void *d, uint32_t n)
 {
-    uint32_t off = FGX_BASE + slot * FGX_SLOT, s;
+    uint32_t off = fgx_addr(slot), s;
     fgx_hdr_t h;
-    if (slot > FBX_UBANK_SLOT || n + sizeof h > FGX_SLOT || !flash_ok)
+    if (slot > FBX_DEV_SLOT || n + sizeof h > fgx_cap(slot) || !flash_ok)
         return -1;
     h.magic = 0xFFFFFFFFu;                             /* the magic last: a cut write leaves no valid header */
     h.len = n;
@@ -113,16 +133,16 @@ static int fgx_write(unsigned slot, const void *d, uint32_t n)
 }
 static int fgx_head(unsigned slot, fgx_hdr_t *h)
 {
-    if (slot > FBX_UBANK_SLOT || !flash_ok || st_read(FGX_BASE + slot * FGX_SLOT, h, sizeof *h))
+    if (slot > FBX_DEV_SLOT || !flash_ok || st_read(fgx_addr(slot), h, sizeof *h))
         return -1;
-    return h->magic == FGX_MAGIC && h->len && h->len + sizeof *h <= FGX_SLOT ? 0 : -1;
+    return h->magic == FGX_MAGIC && h->len && h->len + sizeof *h <= fgx_cap(slot) ? 0 : -1;
 }
 static int fgx_read(unsigned slot, void *d, uint32_t cap, uint32_t *len)
 {
     fgx_hdr_t h;
     if (fgx_head(slot, &h) || h.len > cap)
         return -1;
-    if (st_read(FGX_BASE + slot * FGX_SLOT + sizeof h, d, h.len) || fgx_crc(d, h.len) != h.crc)
+    if (st_read(fgx_addr(slot) + sizeof h, d, h.len) || fgx_crc(d, h.len) != h.crc)
         return -2;
     *len = h.len;
     return 0;
@@ -132,6 +152,92 @@ static int fgx_has(unsigned slot)
     fgx_hdr_t h;
     return !fgx_head(slot, &h);
 }
+static int fgx_info(unsigned slot, uint32_t *len, uint32_t *crc)
+{
+    fgx_hdr_t h;
+    if (fgx_head(slot, &h)) { *len = 0; *crc = 0; return -1; }
+    *len = h.len; *crc = h.crc;
+    return 0;
+}
+/* TUYOS (fg_usr.c): el índice y los datos en la zona de samples, que se tocan por la ventana XIP sin cifrar */
+static const uint8_t *fgx_xip(uint32_t off) { return fm1_xip_ptr(off); }
+static const fg_usr_io_t fgx_usr_io = {st_read, st_erase, st_prog, fgx_xip, FGX_USR, FGX_USR_END - FGX_USR};
+/* la app (fg_box_proto.h): sus respuestas salen como el espejo */
+static int fgx_sysex_out(const uint8_t *p, unsigned n) { return ota_wire_send(p, n); }
+/* un mensaje de la app, antes que ota_service (ota_take suelta cualquier mensaje que llegue) */
+static void fgx_sysex(void)
+{
+    const uint8_t *p;
+    uint32_t n;
+    if (!fgx_ready || !ota_frame_get(&p, &n))
+        return;
+    if (n >= 5u && p[0] == 0x7Du && p[1] == 0x46u && p[2] == 0x47u) {
+        fgx_box.now = fm1_ms;
+        fg_box_sysex(&fgx_box, p + 3, n - 3u);
+        ota_frame_done();
+    }
+}
+
+/* 0.8 -> 0.9, at the first boot. Every step can be cut and redone: a step is done when its new place
+ * holds "FGS0", and a 0.8 slot is only ever overwritten by a later step than its own (new slot k sits
+ * on old slot k / 2). The index sector goes last. Returns the slots that did not fit in 8 KB. */
+static uint32_t fgx_old_ok(uint32_t src, fgx_hdr_t *h)
+{
+    uint8_t t[256];
+    uint32_t c = 0xFFFFFFFFu, i, k;
+    if (st_read(src, h, sizeof *h) || h->magic != FGX_OLD_MAGIC || !h->len || h->len + sizeof *h > FGX_OLD_SLOT)
+        return 0;
+    for (i = 0; i < h->len; i += k) {
+        k = h->len - i > sizeof t ? sizeof t : h->len - i;
+        if (st_read(src + sizeof *h + i, t, k))
+            return 0;
+        c = fgx_crc_run(c, t, k);
+    }
+    return ~c == h->crc;
+}
+static int fgx_move(uint32_t src, uint32_t dst, uint32_t cap)
+{
+    uint8_t t[256];
+    fgx_hdr_t h;
+    uint32_t i, k, n;
+    if (st_read(dst, &h, sizeof h) || h.magic == FGX_MAGIC)
+        return 0;                                      /* done before a cut */
+    if (!fgx_old_ok(src, &h))
+        return 0;                                      /* nothing there */
+    if (h.len + sizeof h > cap)
+        return -1;
+    if (src == dst) {                                  /* slot 0: the same place, the magic's bit */
+        h.magic = FGX_MAGIC;
+        return st_prog(dst, &h.magic, 4u) ? -2 : 0;
+    }
+    n = h.len + sizeof h;
+    for (i = 0; i < n; i += 4096u)
+        if (st_erase(dst + i))
+            return -2;
+    for (i = 4u; i < n; i += k) {                      /* len, crc and the data; the magic last */
+        k = n - i > sizeof t ? sizeof t : n - i;
+        if (st_read(src + i, t, k) || st_prog(dst + i, t, k))
+            return -2;
+    }
+    h.magic = FGX_MAGIC;
+    return st_prog(dst, &h.magic, 4u) ? -2 : 0;
+}
+static uint32_t fgx_migrate(void)
+{
+    uint32_t m, lost = 0, i;
+    if (!flash_ok || st_read(FGX_USR, &m, 4u) || m == FGX_USR_MAGIC)
+        return 0;
+    for (i = 0; i < FBX_SLOTS; i++)
+        if (fgx_move(FGX_BASE + i * FGX_OLD_SLOT, fgx_addr(i), fgx_cap(i)) == -1)
+            lost |= 1u << i;
+    fgx_move(FGX_BASE + 16u * FGX_OLD_SLOT, FGX_AUTO, 0x4000u);
+    fgx_move(FGX_BASE + 17u * FGX_OLD_SLOT, FGX_BANK, 0x1000u);
+    if (!st_erase(FGX_USR)) {
+        m = FGX_USR_MAGIC;
+        st_prog(FGX_USR, &m, 4u);
+    }
+    return lost;
+}
 
 /* -------------------------------------------------------------- boot --- */
 static void fgx_init(void)                             /* before audio_init */
@@ -139,6 +245,10 @@ static void fgx_init(void)                             /* before audio_init */
     fgx_box.store_write = fgx_write;
     fgx_box.store_read = fgx_read;
     fgx_box.store_has = fgx_has;
+    fgx_box.store_info = fgx_info;
+    fgx_box.sysex_out = fgx_sysex_out;
+    fgx_box.usr_io = flash_ok ? &fgx_usr_io : 0;
+    fgx_box.version = "FNTSMG-1 " FGX_VERSION;
     fgx_box.ms = fgx_ms;
     fg_box_init(&fgx_box, fgx_vis, 240, 240, FGX_VIS_HIST, 0x5eed1u ^ fm1_ticks());
     fgx_box.blk_ticks = HALF_FRAMES * FM1_TICKS_PER_US * 1000000u / 44100u;   /* (la polifonía mide el núcleo 1 contra esto) */
@@ -153,9 +263,14 @@ static void fgx_init(void)                             /* before audio_init */
 static void fgx_boot(void)                             /* after the timers: the flash and fm1_ms work */
 {
     fgx_box.now = fm1_ms;
-    if (!fgx_safe)
+    if (!fgx_safe) {
+        uint32_t lost = fgx_migrate(), i, n = 0;
         fg_box_boot(&fgx_box);
-    else {                                             /* the screen says why there is no sound */
+        for (i = 0; i < FBX_SLOTS; i++)
+            n += lost >> i & 1u;
+        if (n)                                         /* 0.8 projects over 8 KB: said once, on the first 0.9 boot */
+            fg_box_note(&fgx_box, n == 1u ? "1 PROYECTO" : "PROYECTOS", "NO CUPO EN 8 KB");
+    } else {                                             /* the screen says why there is no sound */
         static const char L[] = "ARRANQUE SEGURO", V[] = "SIN SONIDO";
         uint32_t i;
         for (i = 0; i < sizeof L; i++) fgx_box.ov.label[i] = L[i];
@@ -205,7 +320,7 @@ static void fgx_mirror(int state)
 {
     static uint8_t m[80];
     unsigned n;
-    fgx_box.mirror = (uint8_t)(fgx_mirror_on && fm1_ms - fgx_mirror_ms < 3000u);
+    fgx_box.mirror = (uint8_t)((fgx_mirror_on && fm1_ms - fgx_mirror_ms < 3000u) || (fg_box_listening(&fgx_box) & 1u));
     if (!fgx_box.mirror)
         return;
     while ((n = fg_box_mirror(&fgx_box, m, state)) != 0u) {
