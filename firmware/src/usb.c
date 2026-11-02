@@ -285,13 +285,13 @@ static void midi_out_event(uint32_t pkt)            /* from the audio ISR */
 #define AC_COLL(a) (a) + 1, (a) + 2
 #endif
 #define D_AC(a)                                                                                      \
-    9, 4, (a), 0, 0, 1, 1, 0, 0,                                                                     \
+    9, 4, (a), 0, 0, 1, 1, 0, IF_NM,                                                                 \
     10, 0x24, 1, 0x00, 0x01, 31, 0, 2, AC_COLL(a),         /* AC header 1.00: audio + MIDI streaming */ \
-    12, 0x24, 2, 1, 0x03, 0x06, 0, UA_CH, 3 * !FELUCCA_UAC_MT, 0, 0, 0,   /* input terminal 1: line, L R (or 8 tracks) */ \
-    9, 0x24, 3, 2, 0x01, 0x01, 0, 1, 0,                    /* output terminal 2: USB streaming, from 1 */
+    12, 0x24, 2, 1, 0x03, 0x06, 0, UA_CH, 3 * !FELUCCA_UAC_MT, 0, 0, IF_NM,   /* input terminal 1: line, L R (or 8 tracks) */ \
+    9, 0x24, 3, 2, 0x01, 0x01, 0, 1, IF_NM,                /* output terminal 2: USB streaming, from 1 */
 #define D_AS(s)                                                                                      \
-    9, 4, (s), 0, 0, 1, 2, 0, 0,                           /* audio streaming, alt 0: no bandwidth */    \
-    9, 4, (s), 1, 1, 1, 2, 0, 0,                           /* alt 1: the stream */                      \
+    9, 4, (s), 0, 0, 1, 2, 0, IF_NM,                       /* audio streaming, alt 0: no bandwidth */    \
+    9, 4, (s), 1, 1, 1, 2, 0, IF_NM,                       /* alt 1: the stream */                      \
     7, 0x24, 1, 2, 1, 0x01, 0x00,                          /* AS general: terminal 2, delay 1, PCM */   \
     D_FMT                                                  /* type I: 2 ch, 16 bit, the rates */        \
     9, 5, 0x84, 0x05, UAC_MAXP & 0xFF, UAC_MAXP >> 8, 1, 0, 0,   /* EP4 IN isochronous async, 1 ms */   \
@@ -300,8 +300,15 @@ static void midi_out_event(uint32_t pkt)            /* from the audio ISR */
 #define D_AC(a) 9, 4, (a), 0, 0, 1, 1, 0, 0, 9, 0x24, 1, 0x00, 0x01, 9, 0, 1, (a) + 1,
 #define D_AS(s)
 #endif
+/* the groovebox names its interfaces and terminals with the product string: macOS shows the audio device and the
+ * MIDI port by those names (its device name turns "FNTSMG-1" into "FNTSMG_1"); Felucca leaves them unnamed */
+#if FELUCCA_FG && !defined(FELUCCA_LOADER)
+#define IF_NM 2
+#else
+#define IF_NM 0
+#endif
 #define D_MIDI(m)                                                                                    \
-    9, 4, (m), 0, 2, 1, 3, 0, 0,                                                                     \
+    9, 4, (m), 0, 2, 1, 3, 0, IF_NM,                                                                   \
     7, 0x24, 1, 0x00, 0x01, 0x41, 0x00,                                                              \
     6, 0x24, 2, 1, 1, 0,                                                                             \
     6, 0x24, 2, 2, 2, 0,                                                                             \
@@ -383,6 +390,8 @@ static const uint8_t STR1[] = {42, 3, 'H', 0, 0xFC, 0, 'g', 0, 'e', 0, 'l', 0, '
 #ifdef FELUCCA_LOADER
 static const uint8_t STR2[] = {30, 3, 'F', 0, 'e', 0, 'l', 0, 'u', 0, 'c', 0, 'c', 0, 'a', 0, ' ', 0, 'U', 0, 'p', 0,
                                'd', 0, 'a', 0, 't', 0, 'e', 0};
+#elif FELUCCA_FG
+static const uint8_t STR2[] = {18, 3, 'F', 0, 'N', 0, 'T', 0, 'S', 0, 'M', 0, 'G', 0, '-', 0, '1', 0};   /* el nombre en la computadora */
 #else
 static const uint8_t STR2[] = {16, 3, 'F', 0, 'e', 0, 'l', 0, 'u', 0, 'c', 0, 'c', 0, 'a', 0};
 #endif
