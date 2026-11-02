@@ -13,7 +13,7 @@
 #include "fg_box.h"
 
 #ifndef FGX_VERSION
-#define FGX_VERSION "0.9"                              /* (lo que dice INFO a la app) */
+#define FGX_VERSION "0.10"                             /* (lo que dice INFO a la app) */
 #endif
 #define FGX_VIS_HIST 1u                                /* cuadros de historia para repite/stutter/reversa del visual */
 static fg_box_t fgx_box __attribute__((section(".pool")));

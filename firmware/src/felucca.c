@@ -49,7 +49,7 @@
                                       * waiting loop is in RAM the ROM and the SPL use at boot) */
 #ifndef FELUCCA_VERSION
 #if FELUCCA_FG
-#define FELUCCA_VERSION "FNTSMG-1 0.8.6"
+#define FELUCCA_VERSION "FNTSMG-1 0.10"
 #elif FELUCCA_FGBENCH
 #define FELUCCA_VERSION "v1.6.1-fgbench2"
 #else
