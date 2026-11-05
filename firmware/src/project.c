@@ -1160,7 +1160,8 @@ static void persist_boot(void)                    /* before settings_init / pane
     persist_t p;                                   /* fg: the flash and the settings (panel calibration, 2ND CORE),
                                                     * none of Felucca's projects, samples or presets */
     uint32_t f = irq_save();
-    flash_ok = FL_FAR(fl_jedec_ram)() == 0x856014u;
+    uint32_t flash_id = FL_FAR(fl_jedec_ram)();
+    flash_ok = flash_id == 0x856014u || flash_id == 0xB36014u; /* known 1 MiB parts, else RAM-only */
     irq_restore(f);
     if (!flash_ok)
         return;
@@ -1173,7 +1174,8 @@ static void persist_boot(void)                    /* before settings_init / pane
 #elif FELUCCA_FLASH
     persist_t p;
     uint32_t f = irq_save();
-    flash_ok = FL_FAR(fl_jedec_ram)() == 0x856014u;       /* the expected 1 MiB part, else stay RAM-only */
+    uint32_t flash_id = FL_FAR(fl_jedec_ram)();
+    flash_ok = flash_id == 0x856014u || flash_id == 0xB36014u; /* known 1 MiB parts, else RAM-only */
     irq_restore(f);
     if (!flash_ok)
         return;
