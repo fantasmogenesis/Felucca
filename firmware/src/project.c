@@ -1152,6 +1152,9 @@ static void project_load(uint32_t slot)
 static persist_t persist_saved __attribute__((section(".pool")));
 static uint8_t persist_pending;                 /* 1 requested, 2 waiting after a flash error */
 static uint32_t persist_retry_ms;
+/* JEDEC id: manufacturer, type, capacity. Any 1 MiB SPI NOR (M-VAVE changes the brand between batches);
+ * a manufacturer byte of 00 or FF means nothing answered */
+static int flash_is_1mib(uint32_t id) { return (id & 0xFFu) == 0x14u && (id >> 16) != 0u && (id >> 16) != 0xFFu; }
 #endif
 
 static void persist_boot(void)                    /* before settings_init / panel_init */
@@ -1160,8 +1163,7 @@ static void persist_boot(void)                    /* before settings_init / pane
     persist_t p;                                   /* fg: the flash and the settings (panel calibration, 2ND CORE),
                                                     * none of Felucca's projects, samples or presets */
     uint32_t f = irq_save();
-    uint32_t flash_id = FL_FAR(fl_jedec_ram)();
-    flash_ok = flash_id == 0x856014u || flash_id == 0xB36014u; /* known 1 MiB parts, else RAM-only */
+    flash_ok = flash_is_1mib(FL_FAR(fl_jedec_ram)());     /* else RAM-only */
     irq_restore(f);
     if (!flash_ok)
         return;
@@ -1174,8 +1176,7 @@ static void persist_boot(void)                    /* before settings_init / pane
 #elif FELUCCA_FLASH
     persist_t p;
     uint32_t f = irq_save();
-    uint32_t flash_id = FL_FAR(fl_jedec_ram)();
-    flash_ok = flash_id == 0x856014u || flash_id == 0xB36014u; /* known 1 MiB parts, else RAM-only */
+    flash_ok = flash_is_1mib(FL_FAR(fl_jedec_ram)());     /* else RAM-only */
     irq_restore(f);
     if (!flash_ok)
         return;

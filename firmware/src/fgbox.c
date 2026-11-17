@@ -164,7 +164,11 @@ static const uint8_t *fgx_xip(uint32_t off) { return fm1_xip_ptr(off); }
 static const fg_usr_io_t fgx_usr_io = {st_read, st_erase, st_prog, fgx_xip, FGX_USR, FGX_USR_END - FGX_USR};
 /* la app (fg_box_proto.h): sus respuestas salen como el espejo */
 static int fgx_sysex_out(const uint8_t *p, unsigned n) { return ota_wire_send(p, n); }
-/* un mensaje de la app, antes que ota_service (ota_take suelta cualquier mensaje que llegue) */
+/* un mensaje de la app, antes que ota_service (ota_take suelta cualquier mensaje que llegue). También entre las
+ * bandas de la pantalla: el búfer guarda uno solo, y lo que llega mientras está ocupado se pierde (la Estación
+ * reintenta: las perillas se sentían torpes). En el arranque seguro solo contesta la presentación y lo que
+ * respalda (leer ranuras): si la Estación tumbó el aparato moviendo algo, volver a atenderla lo tumbaría otra vez
+ * (el ciclo de la pantalla roja) */
 static void fgx_sysex(void)
 {
     const uint8_t *p;
@@ -172,8 +176,11 @@ static void fgx_sysex(void)
     if (!fgx_ready || !ota_frame_get(&p, &n))
         return;
     if (n >= 5u && p[0] == 0x7Du && p[1] == 0x46u && p[2] == 0x47u) {
-        fgx_box.now = fm1_ms;
-        fg_box_sysex(&fgx_box, p + 3, n - 3u);
+        if (!fgx_safe || p[3] == 0x10u || p[3] == 0x20u || p[3] == 0x21u || p[3] == 0x23u || p[3] == 0x25u) {
+            /* (INFO; y ABRIR, LEER, CERRAR y LISTA: respaldar las ranuras sigue funcionando, sin flash para escribir) */
+            fgx_box.now = fm1_ms;
+            fg_box_sysex(&fgx_box, p + 3, n - 3u);
+        }
         ota_frame_done();
     }
 }
@@ -352,6 +359,7 @@ static void fgx_screen(void)
             fgx_bk ^= 1u;
             fgx_sent++;
         }
+        fgx_sysex();                                   /* (la app no espera al cuadro entero) */
     }
     fgx_frame_us = (fm1_ticks() - t0) / FM1_TICKS_PER_US;
     if (fgx_frame_us > fgx_frame_us_max)
@@ -362,6 +370,7 @@ static void fgx_screen(void)
 static void fgx_loop(void)
 {
     uint32_t rel = 0, pr = fm1_input_edges(&rel), i, notes, ch;
+    fgx_box.batt = song.batt_raw;                      /* (el aviso de batería baja: fg_box) */
     fg_box_tick(&fgx_box, fm1_ms);
     for (i = 0; i < 14u; i++) {                        /* matrix button ids -> printed labels */
         uint32_t lab = panel_btn_of(i);
