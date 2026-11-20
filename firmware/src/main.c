@@ -96,9 +96,21 @@ static void fm1_fault(const fm1_crash_t *c)
     draw_text_line(10, 102, 220, &AF_M, b, UI_CRASH_INK, UI_CRASH_BG, 0);
     hexs(b, c->rets);
     draw_text_line(10, 120, 220, &AF_M, b, UI_CRASH_INK, UI_CRASH_BG, 0);
+#if FELUCCA_FG
+    {   /* (#3 de fntsmg-1: la versión y la batería en la foto, y 15 s para tomarla) */
+        uint32_t v = song.batt_raw > 0 ? (uint32_t)song.batt_raw : 0u, n = 0;
+        char d[12];
+        draw_text_line(10, 148, 220, &AF_M, FELUCCA_VERSION, UI_CRASH_INK, UI_CRASH_BG, 0);
+        do d[n++] = (char)('0' + v % 10u); while ((v /= 10u) && n < 6u);
+        b[0] = 'B'; b[1] = 'A'; b[2] = 'T'; b[3] = ' ';
+        for (v = 0; v < n; v++) b[4u + v] = d[n - 1u - v];
+        b[4u + n] = 0;
+        draw_text_line(10, 168, 220, &AF_M, b, UI_CRASH_INK, UI_CRASH_BG, 0);
+    }
+#endif
     t0 = fm1_ticks();
-    while ((uint32_t)(fm1_ticks() - t0) < 4000u * 1000u * FM1_TICKS_PER_US)
-        ;
+    while ((uint32_t)(fm1_ticks() - t0) < (FELUCCA_FG ? 15000u : 4000u) * 1000u * FM1_TICKS_PER_US)
+        fm1_wdt_feed();
     fm1_reboot();
 }
 
